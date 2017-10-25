@@ -97,19 +97,12 @@ pub type MouseBinding = Binding<MouseButton>;
 
 impl<T: Eq> Binding<T> {
     #[inline]
-    fn is_triggered_by(
-        &self,
-        mode: TermMode,
-        mods: &ModifiersState,
-        input: &T
-    ) -> bool {
+    fn is_triggered_by(&self, mode: TermMode, mods: &ModifiersState, input: &T) -> bool {
         // Check input first since bindings are stored in one big list. This is
         // the most likely item to fail so prioritizing it here allows more
         // checks to be short circuited.
-        self.trigger == *input &&
-            self.mode_matches(&mode) &&
-            self.not_mode_matches(&mode) &&
-            self.mods_match(mods)
+        self.trigger == *input && self.mode_matches(&mode) && self.not_mode_matches(&mode) &&
+        self.mods_match(mods)
     }
 }
 
@@ -136,9 +129,7 @@ impl<T> Binding<T> {
     #[inline]
     fn mods_match(&self, mods: &ModifiersState) -> bool {
         debug_assert!(4 == mem::size_of::<ModifiersState>());
-        unsafe {
-            mem::transmute_copy::<_, u32>(&self.mods) == mem::transmute_copy::<_, u32>(mods)
-        }
+        unsafe { mem::transmute_copy::<_, u32>(&self.mods) == mem::transmute_copy::<_, u32>(mods) }
     }
 }
 
@@ -176,51 +167,50 @@ impl Action {
     #[inline]
     fn execute<A: ActionContext>(&self, ctx: &mut A) {
         match *self {
-            Action::Esc(ref s) => {
-                ctx.write_to_pty(s.clone().into_bytes())
-            },
+            Action::Esc(ref s) => ctx.write_to_pty(s.clone().into_bytes()),
             Action::Copy => {
                 ctx.copy_selection(Buffer::Primary);
-            },
+            }
             Action::Paste => {
                 Clipboard::new()
-                    .and_then(|clipboard| clipboard.load_primary() )
-                    .map(|contents| { self.paste(ctx, contents) })
+                    .and_then(|clipboard| clipboard.load_primary())
+                    .map(|contents| self.paste(ctx, contents))
                     .unwrap_or_else(|err| {
-                        eprintln!("Error loading data from clipboard. {}", Red(err));
-                    });
-            },
+                                        eprintln!("Error loading data from clipboard. {}",
+                                                  Red(err));
+                                    });
+            }
             Action::PasteSelection => {
                 Clipboard::new()
-                    .and_then(|clipboard| clipboard.load_selection() )
-                    .map(|contents| { self.paste(ctx, contents) })
+                    .and_then(|clipboard| clipboard.load_selection())
+                    .map(|contents| self.paste(ctx, contents))
                     .unwrap_or_else(|err| {
-                        warn!("Error loading data from clipboard. {}", Red(err));
-                    });
-            },
+                                        warn!("Error loading data from clipboard. {}", Red(err));
+                                    });
+            }
             Action::Command(ref program, ref args) => {
                 trace!("running command: {} {:?}", program, args);
                 match Command::new(program).args(args).spawn() {
                     Ok(child) => {
                         debug!("spawned new proc with pid: {}", child.id());
-                    },
+                    }
                     Err(err) => {
                         warn!("couldn't run command: {}", err);
-                    },
+                    }
                 }
-            },
+            }
             Action::Quit => {
                 // FIXME should do a more graceful shutdown
                 ::std::process::exit(0);
-            },
+            }
             Action::IncreaseFontSize => {
-               ctx.change_font_size(1);
-            },
+                ctx.change_font_size(1);
+            }
             Action::DecreaseFontSize => {
-               ctx.change_font_size(-1);
+                ctx.change_font_size(-1);
             }
             Action::ResetFontSize => {
-               ctx.reset_font_size();
+                ctx.reset_font_size();
             }
         }
     }
@@ -253,7 +243,8 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
             let prev_line = mem::replace(&mut self.ctx.mouse_mut().line, point.line);
             let prev_col = mem::replace(&mut self.ctx.mouse_mut().column, point.col);
 
-            let cell_x = (x as usize - size_info.padding_x as usize) % size_info.cell_width as usize;
+            let cell_x = (x as usize - size_info.padding_x as usize) %
+                         size_info.cell_width as usize;
             let half_cell_width = (size_info.cell_width / 2.0) as usize;
 
             let cell_side = if cell_x > half_cell_width {
@@ -267,16 +258,17 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
                 let report_mode = mode::MOUSE_REPORT_CLICK | mode::MOUSE_MOTION;
                 if !self.ctx.terminal_mode().intersects(report_mode) {
                     self.ctx.update_selection(Point {
-                        line: point.line,
-                        col: point.col
-                    }, cell_side);
+                                                  line: point.line,
+                                                  col: point.col,
+                                              },
+                                              cell_side);
                 } else if self.ctx.terminal_mode().contains(mode::MOUSE_MOTION)
                         // Only report motion when changing cells
                         && (
                             prev_line != self.ctx.mouse_mut().line
                             || prev_col != self.ctx.mouse_mut().column
                         ) {
-                        self.mouse_report(32);
+                    self.mouse_report(32);
                 }
             }
         }
@@ -286,14 +278,12 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
         let (line, column) = (self.ctx.mouse_mut().line, self.ctx.mouse_mut().column);
 
         if line < Line(223) && column < Column(223) {
-            let msg = vec![
-                b'\x1b',
-                b'[',
-                b'M',
-                32 + button,
-                32 + 1 + column.0 as u8,
-                32 + 1 + line.0 as u8,
-            ];
+            let msg = vec![b'\x1b',
+                           b'[',
+                           b'M',
+                           32 + button,
+                           32 + 1 + column.0 as u8,
+                           32 + 1 + line.0 as u8];
 
             self.ctx.write_to_pty(msg);
         }
@@ -330,18 +320,21 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
 
     pub fn on_mouse_press(&mut self) {
         let now = Instant::now();
-        let elapsed = self.ctx.mouse_mut().last_click_timestamp.elapsed();
+        let elapsed = self.ctx
+            .mouse_mut()
+            .last_click_timestamp
+            .elapsed();
         self.ctx.mouse_mut().last_click_timestamp = now;
 
         self.ctx.mouse_mut().click_state = match self.ctx.mouse_mut().click_state {
             ClickState::Click if elapsed < self.mouse_config.double_click.threshold => {
                 self.on_mouse_double_click();
                 ClickState::DoubleClick
-            },
+            }
             ClickState::DoubleClick if elapsed < self.mouse_config.triple_click.threshold => {
                 self.on_mouse_triple_click();
                 ClickState::TripleClick
-            },
+            }
             _ => {
                 let report_modes = mode::MOUSE_REPORT_CLICK | mode::MOUSE_MOTION;
                 if self.ctx.terminal_mode().intersects(report_modes) {
@@ -374,28 +367,27 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
             MouseScrollDelta::LineDelta(_columns, lines) => {
                 let to_scroll = self.ctx.mouse_mut().lines_scrolled + lines;
 
-                let code = if to_scroll > 0.0 {
-                    64
-                } else {
-                    65
-                };
+                let code = if to_scroll > 0.0 { 64 } else { 65 };
 
                 for _ in 0..(to_scroll.abs() as usize) {
                     self.normal_mouse_report(code);
                 }
                 self.ctx.mouse_mut().lines_scrolled = to_scroll % 1.0;
-            },
+            }
             MouseScrollDelta::PixelDelta(_x, y) => {
                 match phase {
                     TouchPhase::Started => {
                         // Reset offset to zero
                         self.ctx.mouse_mut().scroll_px = 0;
-                    },
+                    }
                     TouchPhase::Moved => {
                         self.ctx.mouse_mut().scroll_px += y as i32;
                         let height = self.ctx.size_info().cell_height as i32;
 
-                        while self.ctx.mouse_mut().scroll_px.abs() >= height {
+                        while self.ctx
+                                  .mouse_mut()
+                                  .scroll_px
+                                  .abs() >= height {
                             let button = if self.ctx.mouse_mut().scroll_px > 0 {
                                 self.ctx.mouse_mut().scroll_px -= height;
                                 64
@@ -406,7 +398,7 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
 
                             self.normal_mouse_report(button);
                         }
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -415,11 +407,7 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
 
     pub fn on_focus_change(&mut self, is_focused: bool) {
         if self.ctx.terminal_mode().contains(mode::FOCUS_IN_OUT) {
-            let chr = if is_focused {
-                "I"
-            } else {
-                "O"
-            };
+            let chr = if is_focused { "I" } else { "O" };
 
             let msg = format!("\x1b[{}", chr);
             self.ctx.write_to_pty(msg.into_bytes());
@@ -433,7 +421,7 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
                 match self.ctx.mouse_mut().left_button_state {
                     ElementState::Pressed => {
                         self.on_mouse_press();
-                    },
+                    }
                     ElementState::Released => {
                         self.on_mouse_release();
                     }
@@ -451,12 +439,10 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
     /// Process key input
     ///
     /// If a keybinding was run, returns true. Otherwise returns false.
-    pub fn process_key(
-        &mut self,
-        state: ElementState,
-        key: Option<VirtualKeyCode>,
-        mods: &ModifiersState,
-    ) {
+    pub fn process_key(&mut self,
+                       state: ElementState,
+                       key: Option<VirtualKeyCode>,
+                       mods: &ModifiersState) {
         match (key, state) {
             (Some(key), ElementState::Pressed) => {
                 *self.ctx.last_modifiers() = *mods;
@@ -466,9 +452,9 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
                 if self.process_key_bindings(mods, key) {
                     *self.ctx.suppress_chars() = true;
                 }
-            },
+            }
             (_, ElementState::Released) => *self.ctx.suppress_chars() = false,
-            _ => ()
+            _ => (),
         }
     }
 
@@ -478,9 +464,9 @@ impl<'a, A: ActionContext + 'a> Processor<'a, A> {
             self.ctx.clear_selection();
 
             let utf8_len = c.len_utf8();
-            if *self.ctx.received_count() == 0 && self.ctx.last_modifiers().alt && utf8_len == 1 {
-                self.ctx.write_to_pty(b"\x1b".to_vec());
-            }
+            // if *self.ctx.received_count() == 0 && self.ctx.last_modifiers().alt && utf8_len == 1 {
+            //     self.ctx.write_to_pty(b"\x1b".to_vec());
+            // }
 
             let mut bytes = Vec::with_capacity(utf8_len);
             unsafe {
@@ -566,7 +552,7 @@ mod tests {
         pub last_modifiers: ModifiersState,
     }
 
-    impl <'a>super::ActionContext for ActionContext<'a> {
+    impl<'a> super::ActionContext for ActionContext<'a> {
         fn write_to_pty<B: Into<Cow<'static, [u8]>>>(&mut self, _val: B) {
             // STUBBED
         }
@@ -613,10 +599,8 @@ mod tests {
         fn last_modifiers(&mut self) -> &mut ModifiersState {
             &mut self.last_modifiers
         }
-        fn change_font_size(&mut self, _delta: i8) {
-        }
-        fn reset_font_size(&mut self) {
-        }
+        fn change_font_size(&mut self, _delta: i8) {}
+        fn reset_font_size(&mut self) {}
     }
 
     macro_rules! test_clickstate {
